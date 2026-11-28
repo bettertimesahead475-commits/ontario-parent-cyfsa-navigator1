@@ -28,8 +28,9 @@ describe('Cloudflare Analyzer Usage Endpoint (/api/analyzer-usage)', () => {
 
     expect(json.type).toBe('free');
     expect(json.tier).toBe('Free');
-    expect(json.remaining).toBe(3);
-    expect(json.quickReviewsLimit).toBe(3);
+    expect(json.remaining).toBe(2);
+    expect(json.quickReviewsLimit).toBe(1);
+    expect(json.forensicAnalysesLimit).toBe(1);
   });
 
   it('returns free allowance for authenticated free users', async () => {
@@ -45,7 +46,9 @@ describe('Cloudflare Analyzer Usage Endpoint (/api/analyzer-usage)', () => {
 
     expect(json.type).toBe('free');
     expect(json.tier).toBe('Free');
-    expect(json.quickReviewsLimit).toBe(3);
+    expect(json.quickReviewsLimit).toBe(1);
+    expect(json.forensicAnalysesLimit).toBe(1);
+    expect(json.emailVerificationRequired).toBe(true);
   });
 
   it('returns paid limits for verified paid session', async () => {

@@ -112,8 +112,8 @@ function req(path: string, init: { method?: string; body?: unknown; headers?: Re
     body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
   });
 }
-async function call(db: ReturnType<typeof fakeSupabase>, path: string, init: Parameters<typeof req>[1] = {}, auth: any = allowAdmin) {
-  const response = await handleAdminRequest(req(path, init), env, { requireAdmin: auth, fetcher: db.fetcher as any, now: () => NOW });
+async function call(db: ReturnType<typeof fakeSupabase>, path: string, init: Parameters<typeof req>[1] = {}, auth: any = allowAdmin, adminEnv: AdminEnv = env) {
+  const response = await handleAdminRequest(req(path, init), adminEnv, { requireAdmin: auth, fetcher: db.fetcher as any, now: () => NOW });
   return { status: response.status, body: await response.json() as any };
 }
 
@@ -260,6 +260,40 @@ describe('admin state changes', () => {
     const raced = await call(db, 'payments/approve', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', amountReceived: 129 } });
     expect(raced.status).toBe(409);
     expect(db.tables.access_codes).toHaveLength(1);
+  });
+
+  it('withholds its code when the activation check fails after issuing it (fails closed; Reissue recovers)', async () => {
+    const db = fakeSupabase(seed());
+    const original = db.fetcher.getMockImplementation()!;
+    let checks = 0;
+    db.fetcher.mockImplementation(async (input: any, init: any = {}) => {
+      if ((init.method || 'GET') === 'GET' && String(input).includes('used_at=not.is.null') && ++checks === 2) return new Response('down', { status: 503 });
+      return original(input, init);
+    });
+    const res = await call(db, 'payments/approve', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', amountReceived: 129 } });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ activationUnknown: true, accessCode: null });
+    expect(db.tables.payments[0].status).toBe('approved');
+    const issued = db.tables.access_codes.at(-1)!;
+    expect(Date.parse(issued.expires_at)).toBeLessThanOrEqual(Date.now() + 1000);
+  });
+
+  it('retires its own code when the customer self-activated while the approval was issuing it', async () => {
+    const db = fakeSupabase(seed());
+    const original = db.fetcher.getMockImplementation()!;
+    db.fetcher.mockImplementation(async (input: any, init: any = {}) => {
+      const res = await original(input, init);
+      if (init.method === 'POST' && String(input).endsWith('/rest/v1/access_codes')) {
+        db.tables.access_codes.push({ id: crypto.randomUUID(), email: 'a_b@x.com', tier: 'Premium', reference_number: 'PS-AAAAA', code_hash: 'claim', used_at: '2999-01-01T00:00:00Z', expires_at: '2999-01-15T00:00:00Z' });
+      }
+      return res;
+    });
+    const res = await call(db, 'payments/approve', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', amountReceived: 129 } });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ alreadyActivated: true, accessCode: null });
+    const adminCode = db.tables.access_codes.find((c: any) => c.code_hash !== 'claim' && c.id !== db.tables.access_codes[0].id)!;
+    expect(adminCode.used_at ?? null).toBeNull();
+    expect(Date.parse(adminCode.expires_at)).toBeLessThanOrEqual(Date.now() + 1000);
   });
 
   it('approval rolls the payment back to pending when the code cannot be stored', async () => {
@@ -763,5 +797,146 @@ describe('shared references detected across the whole payments table (re-review 
     expect(c.body.payments.map((p: any) => p.referenceNumber)).toEqual(['PS-BBBBB']);
     expect(c.body.payments[0].bankSettlementStatus).toBe('unknown');
     expect(c.body.reporting.warnings.join(' ')).toMatch(/also used by another payment/);
+  });
+});
+
+describe('transactional email hooks (enqueue only)', () => {
+  const PAYLOAD_KEY = btoa(String.fromCharCode(...new Uint8Array(32).fill(7)));
+  const emailEnv: AdminEnv = { ...env, TRANSACTIONAL_EMAIL_ENABLED: 'true', TRANSACTIONAL_EMAIL_PAYLOAD_KEY: PAYLOAD_KEY };
+
+  it('approval queues confirmation, receipt and a sealed access-code email; the code is never stored in plain text', async () => {
+    const db = fakeSupabase({ ...seed(), transactional_email_outbox: [] });
+    const r = await call(db, 'payments/approve', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', amountReceived: 129 } }, allowAdmin, emailEnv);
+    expect(r.status).toBe(200);
+    expect(r.body.emailsQueued).toEqual({ confirmation: true, receipt: true, accessCode: true });
+    const rows = db.tables.transactional_email_outbox;
+    expect(rows.map((row) => row.kind)).toEqual(['payment_confirmation', 'purchase_receipt', 'access_code']);
+    expect(rows.every((row) => row.dedupe_key === 'PS-AAAAA' && row.recipient_email === 'a_b@x.com')).toBe(true);
+    expect(JSON.stringify(rows)).not.toContain(r.body.accessCode);
+    expect(rows[2].secret_payload).toMatch(/^[A-Za-z0-9+/=]+\.[A-Za-z0-9+/=]+$/);
+  });
+
+  it('approval still succeeds when the outbox table does not exist yet, and nothing is queued while email is off', async () => {
+    const missing = fakeSupabase(seed());
+    const r = await call(missing, 'payments/approve', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', amountReceived: 129 } }, allowAdmin, emailEnv);
+    expect(r.status).toBe(200);
+    expect(r.body.emailsQueued).toEqual({ confirmation: false, receipt: false, accessCode: false });
+    expect(r.body.note).toMatch(/Send this code to the customer now/);
+
+    const off = fakeSupabase({ ...seed(), transactional_email_outbox: [] });
+    expect((await call(off, 'payments/approve', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', amountReceived: 129 } })).status).toBe(200);
+    expect(off.tables.transactional_email_outbox).toHaveLength(0);
+    expect(off.calls.some((c) => c.url.includes('transactional_email_outbox'))).toBe(false);
+  });
+
+  it('refund of a received payment queues one refund confirmation; rejecting a pending order sends nothing', async () => {
+    const db = fakeSupabase({ ...seed(), transactional_email_outbox: [] });
+    const r = await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'Customer request' } }, allowAdmin, emailEnv);
+    expect(r.status).toBe(200);
+    expect(r.body.refundEmailQueued).toBe(true);
+    expect(db.tables.transactional_email_outbox).toMatchObject([{ kind: 'refund_confirmation', dedupe_key: 'PS-BBBBB', recipient_email: 'axb@x.com' }]);
+    const pending = await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', reason: 'Customer request' } }, allowAdmin, emailEnv);
+    expect(pending.body.refundEmailQueued).toBe(false);
+    expect(db.tables.transactional_email_outbox).toHaveLength(1);
+  });
+
+  it('the process endpoint refuses to run while email is off', async () => {
+    const db = fakeSupabase({ ...seed(), transactional_email_outbox: [] });
+    const r = await call(db, 'email-outbox/process', { method: 'POST', body: {} });
+    expect(r.status).toBe(409);
+    expect(r.body.code).toBe('EMAIL_DISABLED');
+  });
+});
+
+describe('refund of an early one-off re-purchase (Migration E granted_credits)', () => {
+  const TOPUP = '44444444-4444-4444-8444-444444444444';
+  // S1 is an active Premium pack (C1, PS-AAAAA) topped up early by PS-TOPUP1. With E applied the session row carries
+  // granted_credits (5 per Premium pack); before E the column does not exist at all.
+  function topUpFixture(granted?: number | null) {
+    const db = fakeSupabase(seed());
+    const session: Row = { ...db.tables.navigator_paid_sessions[0], expires_at: '2027-01-01T00:00:00.000Z' };
+    if (granted !== undefined) session.granted_credits = granted;
+    db.tables.navigator_paid_sessions[0] = session;
+    db.tables.access_codes[0].redeemed_session_id = S1;
+    db.tables.access_codes.push({ id: TOPUP, email: 'a_b@x.com', tier: 'Premium', reference_number: 'PS-TOPUP1', used_at: '2026-12-01T00:00:00Z', expires_at: '2026-12-15T00:00:00Z', redeemed_session_id: S1 });
+    db.tables.payments.push({ reference_number: 'PS-TOPUP1', plan: 'Premium', amount: 49.99, status: 'approved', notes: 'email:a_b@x.com;uid:uidA00001' });
+    return db;
+  }
+  const refund = (db: ReturnType<typeof fakeSupabase>, referenceNumber: string) =>
+    call(db, 'payments/refund', { method: 'POST', body: { referenceNumber, reason: 'Customer request' } });
+  const sessionPatches = (db: ReturnType<typeof fakeSupabase>) =>
+    db.calls.filter((c) => c.method === 'PATCH' && c.url.includes('/rest/v1/navigator_paid_sessions'));
+
+  // With E applied the top-up refund is one database call (paid_refund_one_off_pack, qualified against PostgreSQL in
+  // tests/devin/early-renewal-credits-migration.pg.test.ts); here only the request and the reading of its answer.
+  function withRefundRpc(db: ReturnType<typeof fakeSupabase>, answer: (body: any) => Record<string, unknown>) {
+    const impl = db.fetcher.getMockImplementation()!;
+    const rpc: any[] = [];
+    db.fetcher.mockImplementation(async (input: any, init: any = {}) => {
+      if (String(input).includes('/rest/v1/rpc/paid_refund_one_off_pack')) { const body = JSON.parse(init.body); rpc.push(body); return Response.json(answer(body)); }
+      return impl(input, init);
+    });
+    return rpc;
+  }
+
+  it('E1 refunding the top-up is one database call keyed to that code, with no session PATCH', async () => {
+    const db = topUpFixture(10);
+    const rpc = withRefundRpc(db, () => ({ status: 'applied', used_beyond_remaining: 0 }));
+    expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 1, sessionsRevoked: 0, shorteningsForReview: 0, packAnalysesAlreadyUsed: 0 });
+    expect(rpc).toEqual([{ p_session: S1, p_refund_key: `PS-TOPUP1:${TOPUP}`, p_days: 30 }]);
+    expect(sessionPatches(db)).toHaveLength(0);
+  });
+
+  it('E3 refunding the original pack of a topped-up session uses that pack\'s own refund key', async () => {
+    const db = topUpFixture(10);
+    const rpc = withRefundRpc(db, () => ({ status: 'applied', used_beyond_remaining: 0 }));
+    expect((await refund(db, 'PS-AAAAA')).body).toMatchObject({ sessionsShortened: 1, sessionsRevoked: 0 });
+    expect(rpc).toEqual([{ p_session: S1, p_refund_key: `PS-AAAAA:${db.tables.access_codes[0].id}`, p_days: 30 }]);
+  });
+
+  it('E4 a resumed refund calls the function again and counts its first result, without a second deduction', async () => {
+    const db = topUpFixture(15);
+    const rpc = withRefundRpc(db, (body) => ({ status: rpcSeen.has(body.p_refund_key) ? 'already_applied' : (rpcSeen.add(body.p_refund_key), 'applied'), used_beyond_remaining: 2 }));
+    const rpcSeen = new Set<string>();
+    await refund(db, 'PS-TOPUP1');
+    for (const key of [...db.storage.keys()]) if (key.startsWith('admin-audit/')) db.storage.delete(key);
+    expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 1, shorteningsForReview: 0, packAnalysesAlreadyUsed: 2 });
+    expect(rpc.map((r) => r.p_refund_key)).toEqual([`PS-TOPUP1:${TOPUP}`, `PS-TOPUP1:${TOPUP}`]);
+    expect(sessionPatches(db)).toHaveLength(0);
+  });
+
+  it('E6 analyses of the refunded pack already used are reported for a partial-refund decision', async () => {
+    const db = topUpFixture(10);
+    withRefundRpc(db, () => ({ status: 'applied', used_beyond_remaining: 3 }));
+    expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 1, packAnalysesAlreadyUsed: 3 });
+  });
+
+  it('E7 an answer other than applied (no top-up left, unknown) is reported for review, never as applied', async () => {
+    for (const status of ['no_top_up', 'not_one_off', undefined]) {
+      const db = topUpFixture(10);
+      withRefundRpc(db, () => ({ status }));
+      expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 0, shorteningsForReview: 1 });
+    }
+  });
+
+  it('E8 the last pack of a topped-up session (granted_credits null after earlier refunds) also goes through the function', async () => {
+    const db = topUpFixture(null);
+    const rpc = withRefundRpc(db, () => ({ status: 'applied', used_beyond_remaining: 4 }));
+    expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 1, shorteningsForReview: 0, packAnalysesAlreadyUsed: 4 });
+    expect(rpc).toEqual([{ p_session: S1, p_refund_key: `PS-TOPUP1:${TOPUP}`, p_days: 30 }]);
+    expect(sessionPatches(db)).toHaveLength(0);
+  });
+
+  it('E5 before E (no granted_credits column) and on monthly tiers the refund sends exactly the request it sent before', async () => {
+    const before = topUpFixture();
+    await refund(before, 'PS-TOPUP1');
+    const [patch] = sessionPatches(before);
+    expect(patch.body).toEqual({ expires_at: '2026-12-02T00:00:00.000Z' });
+    expect(decodeURIComponent(patch.url)).not.toContain('granted_credits');
+
+    const monthly = topUpFixture(null);
+    monthly.tables.navigator_paid_sessions[0].tier = 'Pro';
+    await refund(monthly, 'PS-TOPUP1');
+    expect(sessionPatches(monthly)[0].body).toEqual({ expires_at: '2026-12-02T00:00:00.000Z' });
   });
 });

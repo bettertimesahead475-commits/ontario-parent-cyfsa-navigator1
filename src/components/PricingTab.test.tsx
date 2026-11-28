@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import PricingTab from './PricingTab';
 
 // Mock wouter
@@ -65,8 +65,10 @@ describe('PricingTab Branding & Payment Instructions', () => {
 
     // Free / Self-Represented
     expect(screen.getAllByText(/Free \/ Self-Represented/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/1 Free Quick Document Review/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Free Forever • No card needed/i)).toBeDefined();
+    expect(screen.getAllByText(/1 Free Quick Document Review \+ 1 Free Forensic Deep Scan/i).length).toBe(2);
+    expect(screen.queryByText(/3 Free Quick/i)).toBeNull();
+    expect(screen.getByText('1 Quick + 1 Forensic (once)', { selector: 'td.text-slate-800' })).toBeDefined();
+    expect(screen.getByText(/No card needed • One-time free analyses/i)).toBeDefined();
 
     // Analyzer Basic
     expect(screen.getAllByText(/Analyzer Basic/i).length).toBeGreaterThan(0);
@@ -140,5 +142,41 @@ describe('PricingTab Branding & Payment Instructions', () => {
     // Trust badge description
     expect(screen.getAllByText(/Our automated system monitors incoming transfer notifications for your unique payment reference/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/matched manually against your reference number before any access code is issued/i)).toBeNull();
+  });
+
+  describe('e-Transfer destination comes from the server (env.PAYMENT_EMAIL via request-access payTo)', () => {
+    const checkout = async (requestAccessBody: Record<string, unknown>) => {
+      const writeText = vi.fn(() => Promise.resolve());
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+      global.fetch = vi.fn((url: string) =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(String(url).includes('/api/request-access') ? requestAccessBody : { prices: {} }),
+        })
+      ) as any;
+      render(<PricingTab currentTier="Basic" onChangeTier={vi.fn()} userEmail="parent@example.com" firebaseSignedIn />);
+      fireEvent.click(screen.getByRole('button', { name: /Get Access \(\$19\.99\)/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Create Payment Instructions/i }));
+      await waitFor(() => expect(screen.getByText(/Send Interac e-Transfer To/i)).toBeDefined());
+      const dialog = screen.getByRole('dialog');
+      fireEvent.click(screen.getByTitle('Copy email'));
+      return { dialog, writeText };
+    };
+
+    it('shows and copies the payTo returned by the server, not the built-in address', async () => {
+      const { dialog, writeText } = await checkout({ referenceNumber: 'PS-TEST-0001', amount: 19.99, payTo: 'payments@example.test' });
+      expect(dialog.textContent).toContain('payments@example.test');
+      expect(dialog.textContent).not.toContain('chris@cyfsanavigator.com');
+      expect(writeText).toHaveBeenCalledWith('payments@example.test');
+    });
+
+    it('falls back to the built-in address only when payTo is absent or blank', async () => {
+      const { dialog, writeText } = await checkout({ referenceNumber: 'PS-TEST-0002', amount: 19.99 });
+      expect(dialog.textContent).toContain('chris@cyfsanavigator.com');
+      expect(writeText).toHaveBeenCalledWith('chris@cyfsanavigator.com');
+      cleanup();
+      const blank = await checkout({ referenceNumber: 'PS-TEST-0003', amount: 19.99, payTo: '  ' });
+      expect(blank.writeText).toHaveBeenCalledWith('chris@cyfsanavigator.com');
+    });
   });
 });

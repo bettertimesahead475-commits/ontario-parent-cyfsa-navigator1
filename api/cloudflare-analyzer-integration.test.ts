@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { SPEND_CAPS_OFF, freeIdentity, withFreeUsage } from './helpers/freeTrialTestEnv';
+import { freeTrialKey } from '../functions/api/_free-trial';
 import { handleAnalyzeRequest, type AnalyzerEnv } from '../functions/api/analyze';
 import type { GenerateFn } from './services/analyzerSections';
 
@@ -138,6 +140,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     ANTHROPIC_API_KEY: 'test-anthropic-key',
     ANTHROPIC_QUICK_MODEL: 'claude-sonnet-5',
     ANTHROPIC_FORENSIC_MODEL: 'claude-opus-5',
+    ...SPEND_CAPS_OFF,
     STAGING_SUPABASE_URL: 'https://nxfhvebzzobegubefcda.supabase.co',
     STAGING_SUPABASE_SERVICE_ROLE_KEY: 'test-service-key',
     STAGING_SUPABASE_READ_KEY: 'test-read-key',
@@ -173,18 +176,18 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     let reservedCalled = false;
     let finalizedCalled = false;
 
-    mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid });
+    mockAuthVerification.mockResolvedValueOnce(freeIdentity(uid));
 
     const mockRpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
       if (name === 'free_reserve_scan') {
         reservedCalled = true;
-        expect(args.p_uid).toBe(uid);
+        expect(args.p_uid).toBe(await freeTrialKey('quick', `${uid}@example.com`));
         expect(args.p_request).toBe(requestId);
         return { status: 'reserved', reservation_id: 'res_free_001' };
       }
       if (name === 'free_finalize_scan') {
         finalizedCalled = true;
-        expect(args.p_uid).toBe(uid);
+        expect(args.p_uid).toBe(await freeTrialKey('quick', `${uid}@example.com`));
         expect(args.p_request).toBe(requestId);
         return { status: 'consumed' };
       }
@@ -218,7 +221,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     const response = await handleAnalyzeRequest(request, { ...env, ANALYZER_JOBS_QUEUE: { send: queueSend } }, {
       rpc: mockRpc,
       generate: mockGenerate,
-      fetcher: successfulJobStorageWrite(),
+      fetcher: withFreeUsage((successfulJobStorageWrite()) as typeof fetch),
     });
 
     expect(response.status).toBe(200);
@@ -245,7 +248,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     const requestId = 'req_staging_test_err';
     let releasedCalled = false;
 
-    mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid });
+    mockAuthVerification.mockResolvedValueOnce(freeIdentity(uid));
 
     const mockRpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
       if (name === 'free_reserve_scan') {
@@ -281,7 +284,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     const response = await handleAnalyzeRequest(request, env, {
       rpc: mockRpc,
       generate: mockGenerate,
-      fetcher: successfulJobStorageWrite(),
+      fetcher: withFreeUsage((successfulJobStorageWrite()) as typeof fetch),
     });
 
     expect(response.ok).toBe(false);
@@ -292,7 +295,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     const uid = 'user_rpc_err_101';
     const requestId = 'req_rpc_err_01';
 
-    mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid });
+    mockAuthVerification.mockResolvedValueOnce(freeIdentity(uid));
 
     const mockRpc = vi.fn(async (name: string) => {
       if (name === 'free_reserve_scan') {
@@ -324,7 +327,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     const freshIdFetcher = vi.fn(async (url: string) => url.includes('/rpc/analyzer_get_job')
       ? Response.json(null)
       : new Response(JSON.stringify({ statusCode: '404', error: 'not_found', message: 'Object not found' }), { status: 400 })) as unknown as typeof fetch;
-    const response = await handleAnalyzeRequest(request, env, { rpc: mockRpc as any, fetcher: freshIdFetcher });
+    const response = await handleAnalyzeRequest(request, env, { rpc: mockRpc as any, fetcher: withFreeUsage((freshIdFetcher) as typeof fetch) });
     expect(response.status).toBe(503);
     const body = await response.json();
     expect(body).toEqual({
@@ -339,7 +342,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     const uid = 'user_stream_789';
     const requestId = 'req_stream_test_03';
 
-    mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid });
+    mockAuthVerification.mockResolvedValueOnce(freeIdentity(uid));
 
     const mockRpc = vi.fn(async (name: string) => {
       if (name === 'free_reserve_scan') return { status: 'reserved', reservation_id: 'res_stream_003' };
@@ -373,7 +376,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     const response = await handleAnalyzeRequest(request, env, {
       rpc: mockRpc,
       generate: mockGenerate,
-      fetcher: successfulJobStorageWrite(),
+      fetcher: withFreeUsage((successfulJobStorageWrite()) as typeof fetch),
     });
 
     expect(response.status).toBe(200);
@@ -393,7 +396,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     let paidReserved = false;
     let paidFinalized = false;
 
-    mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid });
+    mockAuthVerification.mockResolvedValueOnce(freeIdentity(uid));
     mockSessionRead.mockResolvedValueOnce({
       status: 'verified',
       session: {
@@ -448,7 +451,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     const response = await handleAnalyzeRequest(request, env, {
       rpc: mockRpc,
       generate: mockGenerate,
-      fetcher: successfulJobStorageWrite(),
+      fetcher: withFreeUsage((successfulJobStorageWrite()) as typeof fetch),
     });
 
     expect(response.status).toBe(200);
@@ -462,7 +465,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     const uid = 'user_forged';
     const sessionId = '22222222-3333-4444-8555-666666666666';
 
-    mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid });
+    mockAuthVerification.mockResolvedValueOnce(freeIdentity(uid));
     mockSessionRead.mockResolvedValueOnce({ status: 'denied' });
 
     const request = new Request('https://staging.example/api/analyze', {
@@ -491,7 +494,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     const uid = 'user_paid_exhausted';
     const sessionId = '33333333-4444-4555-8666-777777777777';
 
-    mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid });
+    mockAuthVerification.mockResolvedValueOnce(freeIdentity(uid));
     mockSessionRead.mockResolvedValueOnce({
       status: 'verified',
       session: {
@@ -525,7 +528,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     expect(json.code).toBe('CREDIT_LIMIT_REACHED');
   });
   it('fails bounded Quick Review with explicit 422 and releases credit when model output is truncated', async () => {
-    mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid: 'user_free_trunc' });
+    mockAuthVerification.mockResolvedValueOnce(freeIdentity('user_free_trunc'));
     const releasedCalls: string[] = [];
     const mockRpc = vi.fn(async (name: string) => {
       if (name === 'free_reserve_scan') return { status: 'reserved', reservation_id: 'res_trunc' };
@@ -556,7 +559,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
       }),
     });
 
-    const response = await handleAnalyzeRequest(request, env, { rpc: mockRpc, generate: mockGenerate });
+    const response = await handleAnalyzeRequest(request, env, { rpc: mockRpc, generate: mockGenerate, fetcher: withFreeUsage(fetch) });
     expect(response.status).toBe(422);
     const json = await response.json();
     expect(json.code).toBe('AI_RESPONSE_INVALID');
@@ -565,8 +568,8 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     expect(releasedCalls).toContain('free_release_scan');
   });
 
-  it('rejects oversized documents for Quick Review with explicit 400 AI_REQUEST_REJECTED without calling provider', async () => {
-    mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid: 'user_free_oversized' });
+  it('refuses a free Quick Review over the free character limit with 413 before reserving or calling the provider', async () => {
+    mockAuthVerification.mockResolvedValueOnce(freeIdentity('user_free_oversized'));
     const mockRpc = vi.fn(async (name: string) => {
       if (name === 'free_reserve_scan') return { status: 'reserved', reservation_id: 'res_oversized' };
       if (name === 'free_release_scan') return { status: 'released' };
@@ -587,17 +590,17 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
       }),
     });
 
-    const response = await handleAnalyzeRequest(request, env, { rpc: mockRpc, generate: mockGenerate });
-    expect(response.status).toBe(400);
+    const response = await handleAnalyzeRequest(request, env, { rpc: mockRpc, generate: mockGenerate, fetcher: withFreeUsage(fetch) });
+    expect(response.status).toBe(413);
     const json = await response.json();
-    expect(json.code).toBe('AI_REQUEST_REJECTED');
-    expect(json.error).toContain('exceeds the 75,000 character limit for Quick Review');
+    expect(json.code).toBe('FREE_TRIAL_DOCUMENT_TOO_LARGE');
+    expect(json.error).toContain('75,000 characters');
     expect(mockGenerate).not.toHaveBeenCalled();
-    expect(mockRpc).toHaveBeenCalledWith('free_release_scan', expect.anything());
+    expect(mockRpc).not.toHaveBeenCalled();
   });
 
   it('fails bounded Quick Review with explicit 422 when model produces malformed JSON', async () => {
-    mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid: 'user_free_malformed' });
+    mockAuthVerification.mockResolvedValueOnce(freeIdentity('user_free_malformed'));
     const mockRpc = vi.fn(async (name: string) => {
       if (name === 'free_reserve_scan') return { status: 'reserved', reservation_id: 'res_malformed' };
       if (name === 'free_release_scan') return { status: 'released' };
@@ -624,7 +627,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
       }),
     });
 
-    const response = await handleAnalyzeRequest(request, env, { rpc: mockRpc, generate: mockGenerate });
+    const response = await handleAnalyzeRequest(request, env, { rpc: mockRpc, generate: mockGenerate, fetcher: withFreeUsage(fetch) });
     expect(response.status).toBe(422);
     const json = await response.json();
     expect(json.code).toBe('AI_RESPONSE_INVALID');
@@ -643,7 +646,7 @@ it('uses configured Opus for every Deep Scan section despite a legacy Sonnet pri
   }), {
     ANALYZER_ENABLED: 'true', FIREBASE_PROJECT_ID: 'test', ANTHROPIC_API_KEY: 'fake',
     ANTHROPIC_FORENSIC_MODEL: 'claude-opus-5-5', ANTHROPIC_FORENSIC_PRIMARY_MODEL: 'claude-sonnet-5-5',
-  }, { generate, fetcher: successfulJobStorageWrite() });
+  }, { generate, fetcher: withFreeUsage((successfulJobStorageWrite()) as typeof fetch) });
   expect(response.status).toBe(503);
   expect(generate).toHaveBeenCalled();
   for (const call of generate.mock.calls) expect(call[1]).toBe('claude-opus-5-5');
@@ -661,7 +664,10 @@ it.each([
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ documentText: SAMPLE_DOC, mode: 'full', stream: false, email: 'mr.pelkie@gmail.com', owner_bypass: true }),
   }), { ANALYZER_ENABLED: 'true', FIREBASE_PROJECT_ID: 'test', ANTHROPIC_API_KEY: 'fake' }, { generate, rpc });
-  expect(response.status).toBe(403);
+  // Unverified: 403 EMAIL_VERIFICATION_REQUIRED. Verified non-owner: an ordinary free account, which here has no
+  // counter store, so 503. Either way no owner bypass, no reservation and no model call.
+  expect([403, 503]).toContain(response.status);
   expect(generate).not.toHaveBeenCalled();
-  expect(rpc).not.toHaveBeenCalled();
+  if (!identity.emailVerified) expect(rpc).not.toHaveBeenCalled();
+  for (const [, args] of rpc.mock.calls) expect(JSON.stringify(args)).not.toMatch(/pelkie|owner/i);
 });

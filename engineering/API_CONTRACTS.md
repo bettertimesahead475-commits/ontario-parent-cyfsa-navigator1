@@ -13,7 +13,7 @@ before implementation. Frontend calls go through `src/utils/api.ts` → `apiFetc
   `503 … retryable:true` for transient dependency failures.
 - All responses: `Cache-Control: no-store`. No CORS: the API is same-origin.
 - Rate limits (per isolate, see `functions/api/_rate-limit.ts`): extract-text 20/min, transcribe 10/min,
-  analyze 8/min, activate-code 6/10 min, request-access 5/10 min, admin writes 30/min.
+  analyze 8/min, activate-code 6/10 min, request-access 5/10 min, my-payments 30/10 min, claim-purchase 6/10 min, admin writes 30/min.
 
 ## Customer endpoints
 
@@ -29,7 +29,9 @@ before implementation. Frontend calls go through `src/utils/api.ts` → `apiFetc
 | `POST /api/deep-scan` | Firebase | `{analysisId}` | Forensic entry point (queue) |
 | `GET|POST /api/final-case-assessment` | Firebase | `{matterId, …}` | Final Case Assessment |
 | `GET /api/analyzer-usage` | Firebase | — | free/paid usage and remaining credits |
-| `POST /api/request-access` | Firebase (verified email) | `{tier, requestKey?}` | `{referenceNumber:"PS-XXXXX", amount, instructions}` (Interac e-Transfer instructions; idempotent per `requestKey`) |
+| `POST /api/request-access` | Firebase (verified email) | `{tier, requestKey?}` | `{referenceNumber:"PS-XXXXXXXX", amount, payTo, instructions, reused, openOrder?}`. `amount` is `TIER_PRICES` from `access-pricing.ts` (the advertised price). Idempotent per `requestKey`; an open pending order (same uid and package, last 30 days, same price) is returned instead of a new reference |
+| `GET /api/my-payments` | Firebase | — | `{payTo, orders:[{referenceNumber, plan, amount, currency, state, submittedAt, approvedAt, instructions?}], entitlements:[{tier, startedAt, expiresAt, daysLeft, renewalDue}]}`. Caller's own orders only; `state` ∈ `awaiting_verification`, `ready_to_activate`, `activated`, `refunded`, `cancelled`, `unknown` (refund history unreadable). `renewalDue` when ≤7 days left. Read-only |
+| `POST /api/claim-purchase` | Firebase (verified email) | `{referenceNumber}` | `{success, tier, token, email, expiresAt, referenceNumber}`. Only for an order with `status='approved'` (set by an administrator after verifying funds), same uid and email, not refunded, not yet redeemed. `404 ORDER_NOT_FOUND` (other account/unknown/duplicate reference), `409 PAYMENT_NOT_VERIFIED`/`ORDER_CLOSED`/`ALREADY_ACTIVATED`/`ACTIVATION_IN_PROGRESS`, `503` when refund history cannot be read (fails closed) |
 | `POST /api/activate-code` | Firebase | `{code, email, referenceNumber?}` | `{sessionToken, sessionId, tier, expiresAt}`; `403 PURCHASE_REFERENCE_REQUIRED` when the signed-in email differs from the purchase email; `401` for any mismatch (never reveals which part) |
 | `POST /api/csp-report` | none | CSP report | `204` |
 | `/api/professional-workspace/*` | Firebase | see `functions/api/professional-workspace/[[path]].ts` | |

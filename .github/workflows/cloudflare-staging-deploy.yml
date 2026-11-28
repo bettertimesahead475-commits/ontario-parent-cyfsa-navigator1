@@ -22,14 +22,14 @@ jobs:
       - run: npm run lint
       - run: npm test
       - name: Build frontend
-        run: npx --no-install vite build
+        run: npx --no-install vite build && node scripts/prerender.mjs
         env:
           VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
           VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
           VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
       - name: Verify build artifact
-        run: test -s dist/index.html
+        run: test -s dist/index.html && test -s dist/404.html && test -s dist/rights.html
       - name: Deploy static frontend to existing Direct Upload project
         if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
         run: npx --no-install wrangler pages deploy dist --project-name=cyfsa-navigator-staging --branch=migration/cloudflare-staging-20261029

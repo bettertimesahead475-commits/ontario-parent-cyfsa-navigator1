@@ -12,7 +12,9 @@ const { handleExtractRequest } = await import("../functions/api/extract-text");
 const { extractDocument, docxToText, xmlTokens } = await import("../functions/api/_document-extraction");
 const { classifyGeminiStatus, resolveGeminiModel, DEFAULT_GEMINI_OCR_MODEL } = await import("../functions/api/_gemini");
 
+const { SPEND_CAPS_OFF, SYNTHETIC_SUPABASE, roomyCounterRpc, withFreeUsage } = await import("./helpers/freeTrialTestEnv");
 const ENV = { FIREBASE_PROJECT_ID: "p", GEMINI_API_KEY: "test-key-not-real" };
+const FREE_ENV = { ...ENV, ...SPEND_CAPS_OFF, ...SYNTHETIC_SUPABASE };
 const signedIn = () => verify.mockResolvedValue({ status: "verified", uid: "u1", email: "u@example.test", emailVerified: true });
 
 /** SHA-256 of every image XObject's raw bytes on each page, in page order. */
@@ -154,7 +156,7 @@ describe("document extraction: refusals and provider errors", () => {
   it("refuses unsigned requests before reading the file", async () => {
     verify.mockResolvedValue({ status: "denied" });
     const fetcher = vi.fn();
-    const res = await handleExtractRequest(req({ base64: b64("03-digital-3-pages.pdf"), mimeType: "application/pdf" }), ENV, { fetcher: fetcher as any });
+    const res = await handleExtractRequest(req({ base64: b64("03-digital-3-pages.pdf"), mimeType: "application/pdf" }), FREE_ENV, { fetcher: withFreeUsage(fetcher as unknown as typeof fetch), rpc: roomyCounterRpc as any });
     expect(res.status).toBe(401);
     expect(fetcher).not.toHaveBeenCalled();
   });
@@ -195,7 +197,7 @@ describe("document extraction: refusals and provider errors", () => {
   ])("Gemini %i is classified, and its body never reaches the customer", async (status, body, httpStatus, code) => {
     signedIn();
     const fetcher = vi.fn(async () => new Response(body, { status }));
-    const res = await handleExtractRequest(req({ base64: b64("06-image.png"), mimeType: "image/png", fileName: "p.png" }), ENV, { fetcher: fetcher as any });
+    const res = await handleExtractRequest(req({ base64: b64("06-image.png"), mimeType: "image/png", fileName: "p.png" }), FREE_ENV, { fetcher: withFreeUsage(fetcher as unknown as typeof fetch), rpc: roomyCounterRpc as any });
     expect(res.status).toBe(httpStatus);
     const text = await res.text();
     expect(JSON.parse(text).code).toBe(code);
@@ -206,15 +208,15 @@ describe("document extraction: refusals and provider errors", () => {
   it("classifies a timeout and an unusable response", async () => {
     signedIn();
     const timeout = vi.fn(async () => { throw Object.assign(new Error("t"), { name: "TimeoutError" }); });
-    expect((await (await handleExtractRequest(req({ base64: b64("06-image.png"), mimeType: "image/png" }), ENV, { fetcher: timeout as any })).json()).code).toBe("OCR_TIMEOUT");
+    expect((await (await handleExtractRequest(req({ base64: b64("06-image.png"), mimeType: "image/png" }), FREE_ENV, { fetcher: withFreeUsage(timeout as unknown as typeof fetch), rpc: roomyCounterRpc as any })).json()).code).toBe("OCR_TIMEOUT");
     const junk = vi.fn(async () => new Response("not json", { status: 200 }));
-    expect((await (await handleExtractRequest(req({ base64: b64("06-image.png"), mimeType: "image/png" }), ENV, { fetcher: junk as any })).json()).code).toBe("OCR_INVALID_RESPONSE");
+    expect((await (await handleExtractRequest(req({ base64: b64("06-image.png"), mimeType: "image/png" }), FREE_ENV, { fetcher: withFreeUsage(junk as unknown as typeof fetch), rpc: roomyCounterRpc as any })).json()).code).toBe("OCR_INVALID_RESPONSE");
   });
 
   it("returns EXTRACTION_EMPTY when OCR finds no text", async () => {
     signedIn();
     const empty = vi.fn(async () => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "[no text]" }] } }] }), { status: 200 }));
-    const res = await handleExtractRequest(req({ base64: b64("06-image.png"), mimeType: "image/png" }), ENV, { fetcher: empty as any });
+    const res = await handleExtractRequest(req({ base64: b64("06-image.png"), mimeType: "image/png" }), FREE_ENV, { fetcher: withFreeUsage(empty as unknown as typeof fetch), rpc: roomyCounterRpc as any });
     expect(res.status).toBe(422);
     expect((await res.json()).code).toBe("EXTRACTION_EMPTY");
   });

@@ -1,6 +1,8 @@
 // T-14 (d): instructions hidden in document text cannot change quote verification, second-review status, severity or
 // credits. The model is mocked as fully "obeying" the injection, which is the worst case.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { SPEND_CAPS_OFF, withFreeUsage } from '../../api/helpers/freeTrialTestEnv';
+import { freeTrialKey } from '../../functions/api/_free-trial';
 import { PROJECT, installFirebase, sharedFetcher, type Firebase } from './_firebase';
 import { fakeSupabase } from './_supabase';
 import { applyReportGuards, buildSectionPrompt, buildVerificationPrompt, mergeVerification, neutralizeDocumentTags } from '../../api/services/analyzerSections';
@@ -94,17 +96,17 @@ describe('prompt injection: credits are server-authoritative', () => {
   it('injected text and forged body fields cannot change who is charged, the free limit or the mode', async () => {
     const rpc = vi.fn(async (_name: string, _args: Record<string, unknown>) => { throw Object.assign(new Error('synthetic stop'), { status: 503 }); });
     const generate = vi.fn();
-    const env: any = { FIREBASE_PROJECT_ID: PROJECT, ANALYZER_ENABLED: 'true', ANTHROPIC_API_KEY: 'sk-ant-synthetic-not-a-key', STAGING_SUPABASE_URL: 'https://synthetic.supabase.test/', STAGING_SUPABASE_SERVICE_ROLE_KEY: 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.c2ln' };
+    const env: any = { ...SPEND_CAPS_OFF, FIREBASE_PROJECT_ID: PROJECT, ANALYZER_ENABLED: 'true', ANTHROPIC_API_KEY: 'sk-ant-synthetic-not-a-key', STAGING_SUPABASE_URL: 'https://synthetic.supabase.test/', STAGING_SUPABASE_SERVICE_ROLE_KEY: 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.c2ln' };
     const res = await handleAnalyzeRequest(new Request('https://cyfsa.test/api/analyze', {
       method: 'POST',
       headers: { Authorization: `Bearer ${await fb.token({ sub: 'injector' })}`, 'Content-Type': 'application/json', 'X-Owner-Bypass': 'true' },
       body: JSON.stringify({ documentText: DOC, mode: 'fast', stream: false, uid: 'victim', ownerBypass: true, credits: 999, limit: 999, tier: 'Pro', isOwner: true }),
-    }), env, { fetcher: sharedFetcher(), rpc, generate });
+    }), env, { fetcher: withFreeUsage((sharedFetcher()) as typeof fetch), rpc, generate });
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(generate).not.toHaveBeenCalled();
     const reservations = rpc.mock.calls.filter(([name]: any) => name === 'free_reserve_scan');
     expect(reservations).toHaveLength(1);
-    expect(reservations[0][1]).toMatchObject({ p_uid: 'injector', p_limit: FREE_SCAN_LIMIT });
+    expect(reservations[0][1]).toMatchObject({ p_uid: await freeTrialKey('quick', 'a@example.test'), p_limit: FREE_SCAN_LIMIT });
     expect(JSON.stringify(rpc.mock.calls)).not.toMatch(/victim|(?<!\w)999(?!\w)/);
   });
 });

@@ -210,6 +210,18 @@ describe('durable analyzer queue consumer', () => {
     expect(msg.retry).not.toHaveBeenCalled();
   });
 
+  it('stops a redelivered free job once its lifetime run budget is spent, returning the entitlement without a provider run', async () => {
+    const rpc = vi.fn(async (name: string) => (name === 'free_reserve_scan' ? { status: 'limit', reservation_id: null } : { status: 'consumed' }));
+    mocks.createRpc.mockReturnValue(rpc);
+    const msg = message(undefined, 2);
+    await processJob(msg, {} as any);
+    expect(rpc).toHaveBeenCalledWith('free_reserve_scan', expect.objectContaining({ p_uid: 'fat:user_1' }));
+    expect(mocks.handle).not.toHaveBeenCalled();
+    expect(mocks.update).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ status: 'failed', errorCode: 'FREE_TRIAL_ATTEMPTS_EXHAUSTED', retryable: false }));
+    expect(mocks.releaseFree).toHaveBeenCalledOnce();
+    expect(msg.ack).toHaveBeenCalledOnce();
+  });
+
   it('marks exhausted jobs failed and releases their reserved credit from the dead-letter consumer', async () => {
     mocks.failDlq.mockResolvedValue({ ...job(), status: 'failed' });
     const msg = message();

@@ -1,16 +1,17 @@
 // Request validation in front of the analyzer: every refusal happens before any credit is reserved or model called.
 import { describe, expect, it, vi } from 'vitest';
+import { SPEND_CAPS_OFF, freeIdentity, withFreeUsage } from './helpers/freeTrialTestEnv';
 import { handleAnalyzeRequest, withHardDeadline, type AnalyzerEnv } from '../functions/api/analyze';
 
-vi.mock('../functions/api/_auth-check', () => ({ verifyFirebaseRequest: vi.fn(async () => ({ status: 'verified', uid: 'free_uid', emailVerified: false, email: null })) }));
+vi.mock('../functions/api/_auth-check', () => ({ verifyFirebaseRequest: vi.fn(async () => (freeIdentity('free_uid'))) }));
 
-const env = { ANALYZER_ENABLED: 'true', FIREBASE_PROJECT_ID: 'p', ANTHROPIC_API_KEY: 'sk-ant-synthetic', STAGING_SUPABASE_URL: 'https://synthetic.supabase.co/', STAGING_SUPABASE_SERVICE_ROLE_KEY: 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.c2ln' } as AnalyzerEnv;
+const env = { ...SPEND_CAPS_OFF, ANALYZER_ENABLED: 'true', FIREBASE_PROJECT_ID: 'p', ANTHROPIC_API_KEY: 'sk-ant-synthetic', STAGING_SUPABASE_URL: 'https://synthetic.supabase.co/', STAGING_SUPABASE_SERVICE_ROLE_KEY: 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.c2ln' } as AnalyzerEnv;
 const missing = () => new Response(JSON.stringify({ statusCode: '404', error: 'not_found' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
 const post = (body: string | object, id = '') => new Request('https://x.test/api/analyze', {
   method: 'POST', headers: { Authorization: 'Bearer t', 'Content-Type': 'application/json', ...(id ? { 'X-Analysis-Id': id } : {}) },
   body: typeof body === 'string' ? body : JSON.stringify(body),
 });
-const deps = () => ({ rpc: vi.fn(), generate: vi.fn(), fetcher: vi.fn(async (url: string) => url.includes('/rpc/') ? Response.json(null) : missing()) as unknown as typeof fetch });
+const deps = () => ({ rpc: vi.fn(), generate: vi.fn(), fetcher: withFreeUsage(vi.fn(async (url: string) => url.includes('/rpc/') ? Response.json(null) : missing()) as unknown as typeof fetch) });
 
 describe('analyze request validation', () => {
   it('refuses incomplete configuration, invalid JSON and an unknown mode without reserving credit', async () => {

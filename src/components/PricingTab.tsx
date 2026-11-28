@@ -28,6 +28,7 @@ import { getUserKey } from "../utils/storage";
 import { useLocation } from "wouter";
 import { auth, signInMinimal } from "../utils/firebase";
 import { apiFetch } from "../utils/api";
+import MyOrdersPanel from "./MyOrdersPanel";
 
 interface PricingTabProps {
   currentTier: AccessTier;
@@ -51,6 +52,10 @@ const FALLBACK_TIER_PRICES: Record<string, number> = {
 
 const PAYMENT_EMAIL = "chris@cyfsanavigator.com";
 
+// Same format as the server's e-Transfer instructions (request-access getInstructions): 2,000 and 49.99.
+const formatCad = (amount: number) =>
+  Number.isInteger(amount) ? amount.toLocaleString("en-CA") : amount.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 type PurchasableTier = "Pro" | "Premium" | "Basic" | "Community5" | "Community10" | "Community25";
 type CheckoutStage = "idle" | "email" | "awaiting-code" | "verifying" | "success" | "error";
 
@@ -60,6 +65,8 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
   const [stage, setStage] = useState<CheckoutStage>("idle");
   const [email, setEmail] = useState(userEmail);
   const [referenceNumber, setReferenceNumber] = useState("");
+  // Destination returned by /api/request-access (env.PAYMENT_EMAIL on the server); the constant is only a fallback.
+  const [payTo, setPayTo] = useState(PAYMENT_EMAIL);
   const [codeInput, setCodeInput] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isSigningIn, setIsSigningIn] = useState(false);
@@ -69,6 +76,8 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
   // Activator state
   const [sidebarEmail, setSidebarEmail] = useState(userEmail);
   const [sidebarCode, setSidebarCode] = useState("");
+  // Plans whose active period ends within the reminder window: their card offers checkout again to renew.
+  const [renewalTiers, setRenewalTiers] = useState<string[]>([]);
   const [sidebarError, setSidebarError] = useState("");
   const [sidebarBusy, setSidebarBusy] = useState(false);
   const [sidebarSuccess, setSidebarSuccess] = useState(false);
@@ -187,6 +196,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
         throw new Error(data.error || "Request failed.");
       }
       setReferenceNumber(data.referenceNumber);
+      setPayTo(typeof data.payTo === "string" && data.payTo.trim() ? data.payTo.trim() : PAYMENT_EMAIL);
       setStage("awaiting-code");
     } catch (err: any) {
       setErrorMessage(err.message || "Something went wrong. Try again.");
@@ -395,7 +405,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
                   <span className="text-slate-500 text-xs font-semibold">CAD</span>
                 </div>
                 <span className="text-[11px] font-sans text-emerald-700 font-semibold block mt-0.5">
-                  Free Forever • No card needed
+                  No card needed • One-time free analyses
                 </span>
               </div>
 
@@ -406,10 +416,10 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
                 </span>
                 <p className="text-slate-700 font-semibold text-xs flex items-center gap-1.5">
                   <FileSearch className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                  <span>1 Free Quick Document Review</span>
+                  <span>1 Free Quick Document Review + 1 Free Forensic Deep Scan</span>
                 </p>
                 <p className="text-[10.5px] text-slate-500 leading-tight pt-1 border-t border-slate-200/60">
-                  When used, your on-screen report remains viewable. Upgrade to analyze new files.
+                  One-time per verified email, up to 30 pages and 10 MB per document; they do not renew. Completed reports stay viewable and exportable. Audio transcription and Final Case Assessment are paid.
                 </p>
               </div>
 
@@ -417,7 +427,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
               <div className="space-y-2.5 pt-1 text-xs text-slate-700">
                 <div className="flex items-start gap-2.5">
                   <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                  <span>1 Free Quick Document Review</span>
+                  <span>1 Free Quick Document Review + 1 Free Forensic Deep Scan</span>
                 </div>
                 <div className="flex items-start gap-2.5">
                   <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
@@ -604,7 +614,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
               <div className="space-y-2.5 pt-1 text-xs text-slate-700">
                 <div className="flex items-start gap-2.5">
                   <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
-                  <span className="font-semibold text-slate-900">5 Forensic In-Depth Dual-Pass analyses</span>
+                  <span className="font-semibold text-slate-900">5 analyses in total, Forensic In-Depth Dual-Pass or Quick</span>
                 </div>
                 <div className="flex items-start gap-2.5">
                   <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
@@ -633,7 +643,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
             </div>
 
             <div className="pt-6 mt-auto">
-              {currentTier === "Premium" ? (
+              {currentTier === "Premium" && !renewalTiers.includes("Premium") ? (
                 <button
                   type="button"
                   disabled
@@ -749,7 +759,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
             </div>
 
             <div className="pt-6 mt-auto">
-              {currentTier === "Pro" ? (
+              {currentTier === "Pro" && !renewalTiers.includes("Pro") ? (
                 <button
                   type="button"
                   disabled
@@ -816,16 +826,16 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
             <tbody className="divide-y divide-slate-100 text-slate-700">
               <tr>
                 <td className="py-3 px-4 font-semibold text-slate-900">Billing Type</td>
-                <td className="py-3 px-3 text-center text-slate-600 font-sans text-[11px]">Free Forever</td>
+                <td className="py-3 px-3 text-center text-slate-600 font-sans text-[11px]">Free (one-time trial)</td>
                 <td className="py-3 px-3 text-center text-blue-800 font-sans text-[11px]">One-Time</td>
                 <td className="py-3 px-3 text-center text-purple-800 font-sans text-[11px]">One-Time</td>
                 <td className="py-3 px-3 text-center text-indigo-800 font-sans text-[11px]">Monthly Membership</td>
               </tr>
               <tr className="bg-slate-50/40">
                 <td className="py-3 px-4 font-semibold text-slate-900">Included Analyses</td>
-                <td className="py-3 px-3 text-center font-bold text-slate-800">1 Quick Review</td>
+                <td className="py-3 px-3 text-center font-bold text-slate-800">1 Quick + 1 Forensic (once)</td>
                 <td className="py-3 px-3 text-center font-bold text-blue-800">3 Quick Reviews</td>
-                <td className="py-3 px-3 text-center font-bold text-purple-800">5 Forensic Dual-Pass</td>
+                <td className="py-3 px-3 text-center font-bold text-purple-800">5 Forensic or Quick</td>
                 <td className="py-3 px-3 text-center font-bold text-indigo-800">5 Forensic / month</td>
               </tr>
               <tr>
@@ -1089,6 +1099,10 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
         </div>
       </div>
 
+      <React.Fragment key={firebaseSignedIn ? userEmail || "signed-in" : "signed-out"}>
+        <MyOrdersPanel signedIn={firebaseSignedIn} onActivated={onChangeTier} onRenewalDue={setRenewalTiers} />
+      </React.Fragment>
+
       {/* 7. Access Code Activator */}
       <div
         className="bg-linear-to-r from-[#eef2ff] to-[#f0fdf4] border border-indigo-100 rounded-2xl p-6 text-left shadow-2xs space-y-4"
@@ -1196,7 +1210,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
                     Interac e-Transfer Checkout
                   </h3>
                   <p className="text-[10px] text-emerald-400 font-semibold font-sans">
-                    {selectedTier} Plan — ${selectedTier ? TIER_PRICES[selectedTier] : 0} CAD
+                    {selectedTier} Plan — ${selectedTier ? formatCad(TIER_PRICES[selectedTier]) : 0} CAD
                   </p>
                 </div>
               </div>
@@ -1273,11 +1287,11 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
                     </span>
                     <div className="flex items-center gap-2">
                       <span className="bg-slate-900 text-white font-sans text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-950 select-all tracking-wide">
-                        {PAYMENT_EMAIL}
+                        {payTo}
                       </span>
                       <button
                         type="button"
-                        onClick={() => copyToClipboard(PAYMENT_EMAIL, "email")}
+                        onClick={() => copyToClipboard(payTo, "email")}
                         className="p-1.5 bg-white border border-slate-300 hover:bg-slate-100 rounded-md text-slate-700 text-xs font-semibold flex items-center gap-1 cursor-pointer"
                         title="Copy email"
                       >
@@ -1294,7 +1308,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
                         2. Exact Amount:
                       </span>
                       <span className="font-bold text-slate-900 text-sm">
-                        ${selectedTier ? TIER_PRICES[selectedTier] : 0} CAD
+                        ${selectedTier ? formatCad(TIER_PRICES[selectedTier]) : 0} CAD
                       </span>
                     </div>
 

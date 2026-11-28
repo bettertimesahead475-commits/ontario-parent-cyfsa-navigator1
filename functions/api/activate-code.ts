@@ -34,7 +34,7 @@ function toBase64Url(bytes: Uint8Array): string {
   return trimCharacters(btoa(binary).replace(/\+/g, '-').replace(/\//g, '_'), '=', { end: true });
 }
 
-async function signSessionToken(jti: string, expiresAt: number, secret: string): Promise<string> {
+export async function signSessionToken(jti: string, expiresAt: number, secret: string): Promise<string> {
   const enc = new TextEncoder();
   const payloadStr = JSON.stringify({ jti, exp: expiresAt });
   const payloadBytes = enc.encode(payloadStr);

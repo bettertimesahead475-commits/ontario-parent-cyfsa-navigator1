@@ -16,8 +16,7 @@ import { RATE_LIMITS, rateLimitRetryAfter, rateLimitSubject, rateLimitedResponse
 import { readVerifiedPaidSession } from './_supabase-paid-session';
 import { reserveVerifiedPaidCredit, type CreditRpc } from './_paid-credit-reservation';
 import { finalizePaidReservation, releasePaidReservation } from './_paid-credit-lifecycle';
-import { reserveFreeScan } from './_free-credit-reservation';
-import { finalizeFreeScan, releaseFreeScan } from './_free-credit-lifecycle';
+import { FREE_TRIAL_MAX_CHARS, finalizeFreeReservation, platformDailyKey, releaseFreeReservation, reserveFreeTrial, spendLimit, takeCapUnit, type FreeTrialEnv } from './_free-trial';
 import { claimJobRecord, saveCompletedJob, saveJobState } from './_analysis-jobs';
 import { createDurableJob, DurableJobStorageError, jobOwnership, nextAttemptId, type JobOwnership, readDurableJob, saveDurableInput, updateDurableJob, type AnalyzerQueueBinding, type DurableJobRecord } from './_durable-analysis-jobs';
 import { createAnalyzerQueueMessage } from './_analyzer-queue-contract';
@@ -90,7 +89,7 @@ export function extractSessionId(raw: unknown): string | null {
   return null;
 }
 
-export interface AnalyzerEnv {
+export interface AnalyzerEnv extends FreeTrialEnv {
   ANALYZER_ENABLED?: string; // 'true' enables execution; otherwise fails closed with 503
   /** Experimental Forensic reasoning. Only 'adaptive' changes behaviour; unset or any other value keeps the default. */
   ANALYZER_FORENSIC_REASONING?: string;
@@ -429,6 +428,16 @@ export async function handleAnalyzeRequest(
       );
     }
 
+    // Platform-wide daily cap on paid analyses, taken before any provider call (./_free-trial.ts).
+    const paidCap = await takeCapUnit(platformDailyKey('paid', new Date()), requestId, spendLimit(env, 'PAID_PLATFORM_DAILY_LIMIT'), rpc);
+    // Paid work is served first: an unreadable counter never blocks a paying customer (their own credits still cap
+    // them); only a reached platform limit does.
+    if (paidCap === 'limit') {
+      return Response.json(
+        { error: "Today's analysis capacity has been reached. Please try again tomorrow. Nothing was charged.", code: 'PLATFORM_DAILY_LIMIT', retryable: false },
+        { status: 503, headers: DEFAULT_HEADERS }
+      );
+    }
     const reservation = await reserveVerifiedPaidCredit(sessionRead.session, isForensic ? 'forensic' : 'quick', requestId, rpc);
     if (reservation.status === 'limit') {
       return Response.json(
@@ -450,44 +459,67 @@ export async function handleAnalyzeRequest(
     }
     reservationId = reservation.reservation_id;
   } else {
-    // Free user scan
-    if (isForensic) {
+    // Free trial (./_free-trial.ts): one lifetime Quick Review and one lifetime Forensic Deep Scan per verified email.
+    const kind = isForensic ? 'forensic' : 'quick';
+    const label = isForensic ? 'Forensic Deep Scan' : 'Quick Document Review';
+    if (documentText.length > FREE_TRIAL_MAX_CHARS[kind]) {
       return Response.json(
-        { error: 'Forensic In-Depth analysis requires a paid plan.', code: 'UPGRADE_REQUIRED' },
-        { status: 403, headers: DEFAULT_HEADERS }
+        { error: `A free ${label} accepts up to ${FREE_TRIAL_MAX_CHARS[kind].toLocaleString('en-CA')} characters of text. Purchase a plan for larger records. Nothing was charged.`, code: 'FREE_TRIAL_DOCUMENT_TOO_LARGE', retryable: false },
+        { status: 413, headers: DEFAULT_HEADERS }
       );
     }
-    const reservation = await reserveFreeScan(uid, requestId, rpc);
-    if (reservation.status === 'limit') {
+    const trial = await reserveFreeTrial({
+      kind, uid, email: identity.email ?? null, emailVerified: identity.emailVerified,
+      ip: request.headers.get('cf-connecting-ip'), captchaToken: request.headers.get('x-turnstile-token'),
+      requestId, rpc, env, fetcher: authFetcher,
+    });
+    if (trial.status === 'limit') {
       return Response.json(
-        { error: "You've used your free analysis. Upgrade to continue.", code: 'FREE_LIMIT_REACHED' },
+        { error: `You've used your free ${label}. Purchase a plan to continue.`, code: 'FREE_LIMIT_REACHED', kind },
         { status: 402, headers: DEFAULT_HEADERS }
       );
     }
-    if (reservation.status === 'joined' || reservation.status === 'consumed') {
+    if (trial.status === 'email_unverified') {
+      return Response.json(
+        { error: 'The free trial needs a verified email address. Sign in with Google or verify your email, then try again. Nothing was charged.', code: 'EMAIL_VERIFICATION_REQUIRED' },
+        { status: 403, headers: DEFAULT_HEADERS }
+      );
+    }
+    if (trial.status === 'captcha_failed') {
+      return Response.json(
+        { error: 'Please complete the human-verification check, then start the free analysis again. Nothing was charged.', code: 'CAPTCHA_REQUIRED' },
+        { status: 403, headers: DEFAULT_HEADERS }
+      );
+    }
+    if (trial.status === 'paused') {
+      return Response.json(
+        { error: 'Free trial analyses are paused for today because of high demand. Your free analysis is still available; please try again tomorrow. Nothing was charged.', code: 'FREE_TRIAL_PAUSED', retryable: false },
+        { status: 503, headers: DEFAULT_HEADERS }
+      );
+    }
+    if (trial.status === 'attempt_limit') {
+      return Response.json(
+        { error: `Your free ${label} could not be completed after several attempts. Please contact support or purchase a plan. Nothing was charged.`, code: 'FREE_TRIAL_ATTEMPTS_EXHAUSTED', retryable: false },
+        { status: 429, headers: DEFAULT_HEADERS }
+      );
+    }
+    if (trial.status === 'ip_limit') {
+      return Response.json(
+        { error: 'Too many free trials were started from this network today. Try again tomorrow or purchase a plan. Nothing was charged.', code: 'FREE_TRIAL_DAILY_LIMIT', retryable: false },
+        { status: 429, headers: DEFAULT_HEADERS }
+      );
+    }
+    if (trial.status === 'joined' || trial.status === 'consumed') {
       return Response.json(
         { error: 'This analysis is already running or completed.', code: 'ANALYSIS_IN_PROGRESS', jobId: requestId },
         { status: 409, headers: DEFAULT_HEADERS }
       );
     }
-    if (reservation.status !== 'reserved' || !reservation.reservation_id) {
-      // PostgreSQL diagnostics can expose schema details and internal queries.
-      // Keep diagnostic context server-side; clients receive a stable, minimal error.
-      console.error('[FREE_SCAN_RESERVATION_UNAVAILABLE]', JSON.stringify({
-        status: reservation.status,
-        httpStatus: reservation.httpStatus,
-        pgCode: reservation.pgCode,
-      }));
-
-      return Response.json({
-        error: 'Free scan reservation unavailable.',
-        code: 'RESERVATION_UNAVAILABLE',
-      }, {
-        status: reservation.status === 'denied' ? 403 : 503,
-        headers: DEFAULT_HEADERS,
-      });
+    if (trial.status !== 'reserved') {
+      console.error('[FREE_SCAN_RESERVATION_UNAVAILABLE]', JSON.stringify({ status: trial.status }));
+      return Response.json({ error: 'Free scan reservation unavailable.', code: 'RESERVATION_UNAVAILABLE' }, { status: 503, headers: DEFAULT_HEADERS });
     }
-    reservationId = reservation.reservation_id;
+    reservationId = trial.reservationId;
   }
 
   // Forensic scans use durable Queue processing; keep Quick Review on its
@@ -529,7 +561,7 @@ export async function handleAnalyzeRequest(
         if (isOwner || !reservationId) return;
         try {
           if (sessionId) await releasePaidReservation(sessionId, requestId, reservationId, rpc);
-          else await releaseFreeScan(uid, requestId, reservationId, rpc);
+          else await releaseFreeReservation(uid, requestId, reservationId, rpc);
         } catch (releaseError) { console.error('[ANALYZER_ENQUEUE_RELEASE_FAILED]', releaseError instanceof Error ? releaseError.name : 'error'); }
       };
       // Only a confirmed unique violation (PostgREST HTTP 409) proves the row existed before this
@@ -824,7 +856,7 @@ export async function handleAnalyzeRequest(
     if (isOwner) return true;
     for (let attempt = 0; attempt < 3; attempt++) {
       if (attempt) await new Promise((resolve) => setTimeout(resolve, 300 * 3 ** (attempt - 1)));
-      const res = sessionId ? await finalizePaidReservation(sessionId, requestId, rpc) : await finalizeFreeScan(uid, requestId, rpc);
+      const res = sessionId ? await finalizePaidReservation(sessionId, requestId, rpc) : await finalizeFreeReservation(uid, requestId, reservationId, rpc);
       if (res.status === 'consumed') return true;
       if (res.status === 'released' || res.status === 'missing') {
         console.warn('[ANALYZER_DELIVERED_UNCHARGED]', JSON.stringify({ paid: Boolean(sessionId), reservation: res.status }));
@@ -844,7 +876,7 @@ export async function handleAnalyzeRequest(
       if (sessionId) {
         await releasePaidReservation(sessionId, requestId, reservationId, rpc);
       } else {
-        await releaseFreeScan(uid, requestId, reservationId, rpc);
+        await releaseFreeReservation(uid, requestId, reservationId, rpc);
       }
     } catch (e) {
       console.error('[ANALYZER_RELEASE_FAILED]', e);

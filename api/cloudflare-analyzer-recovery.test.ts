@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { SPEND_CAPS_OFF, freeIdentity, withFreeUsage } from './helpers/freeTrialTestEnv';
 import { handleAnalyzeRequest } from '../functions/api/analyze';
 import {
   repairTruncatedJsonObject,
@@ -183,6 +184,7 @@ describe('Cloudflare Analyzer Intelligent Truncation Recovery Pipeline', () => {
     ANALYZER_ENABLED: 'true',
     FIREBASE_PROJECT_ID: 'test-project',
     ANTHROPIC_API_KEY: 'test-anthropic-key',
+    ...SPEND_CAPS_OFF,
     STAGING_SUPABASE_URL: 'https://test-project.supabase.co',
     STAGING_SUPABASE_SERVICE_ROLE_KEY: 'service-role-test-key',
   };
@@ -192,7 +194,7 @@ describe('Cloudflare Analyzer Intelligent Truncation Recovery Pipeline', () => {
   });
 
   it('recovers missing sections when direct analysis truncates at max_tokens with partial valid sections', async () => {
-    mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid: 'user_recovery_test' });
+    mockAuthVerification.mockResolvedValueOnce(freeIdentity('user_recovery_test'));
 
     const releasedCalls: string[] = [];
     const finalizedCalls: string[] = [];
@@ -248,7 +250,7 @@ describe('Cloudflare Analyzer Intelligent Truncation Recovery Pipeline', () => {
     const response = await handleAnalyzeRequest(request, env, {
       rpc: mockRpc,
       generate: mockGenerate as any,
-      fetcher: vi.fn(async () => new Response('{}', { status: 200 })) as any,
+      fetcher: withFreeUsage(vi.fn(async () => new Response('{}', { status: 200 })) as typeof fetch),
     });
     expect(response.status).toBe(200);
     const json = await response.json() as any;
@@ -274,11 +276,12 @@ describe('Cloudflare Analyzer Intelligent Truncation Recovery Pipeline', () => {
 describe('credit finalization after the report is saved', () => {
   const env: any = {
     ANALYZER_ENABLED: 'true', FIREBASE_PROJECT_ID: 'test-project', ANTHROPIC_API_KEY: 'test-anthropic-key',
+    ...SPEND_CAPS_OFF,
     STAGING_SUPABASE_URL: 'https://test-project.supabase.co', STAGING_SUPABASE_SERVICE_ROLE_KEY: 'service-role-test-key',
   };
   const generate = vi.fn(async () => ({ text: VALID_COMPLETE_REPORT_JSON, stopReason: 'end_turn', model: 'claude-sonnet-5', durationMs: 5, usage: { input_tokens: 1, output_tokens: 1 } }));
   async function run(finalizeAnswers: string[]) {
-    mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid: 'user_finalize_test' });
+    mockAuthVerification.mockResolvedValueOnce(freeIdentity('user_finalize_test'));
     const calls: string[] = [];
     const answers = [...finalizeAnswers];
     const rpc = vi.fn(async (name: string) => {
@@ -295,7 +298,7 @@ describe('credit finalization after the report is saved', () => {
     const response = await handleAnalyzeRequest(new Request('https://staging.example/api/analyze', {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer t', 'X-Analysis-Id': 'req_finalize_' + finalizeAnswers.join('_') },
       body: JSON.stringify({ documentText: SAMPLE_DOC, mode: 'fast', stream: false }),
-    }), env, { rpc: rpc as any, generate: generate as any, fetcher: fetcher as any });
+    }), env, { rpc: rpc as any, generate: generate as any, fetcher: withFreeUsage((fetcher as any) as typeof fetch) });
     return { response, calls, writes };
   }
 
