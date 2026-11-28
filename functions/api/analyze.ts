@@ -96,6 +96,8 @@ export interface AnalyzerEnv extends FreeTrialEnv {
   ANALYZER_FORENSIC_PIPELINE?: string;
   /** Experimental single-call Basic. Only 'consolidated' changes behaviour; unset keeps the sectioned Basic pipeline. */
   ANALYZER_BASIC_PIPELINE?: string;
+  /** Parallel Forensic section calls (1-6). Unset or invalid keeps the default of 3. */
+  FORENSIC_SECTION_CONCURRENCY?: string;
   /** Secret for document fingerprints and cache keys. Reuse planning is skipped when unset. */
   REPORT_CACHE_SECRET?: string;
   /** Experimental Final Case Assessment consolidation. Only 'true' changes behaviour. */
@@ -167,6 +169,12 @@ export interface AnalyzeDependencies {
 function clampBudget(raw: string | undefined, fallback: number): number {
   const n = Number(raw);
   return Number.isFinite(n) && n >= 10_000 && n <= 300_000 ? n : fallback;
+}
+
+/** Forensic section concurrency from configuration: an integer 1-6, otherwise the default of 3. */
+export function forensicSectionConcurrency(raw: string | undefined): number {
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 1 && n <= 6 ? n : 3;
 }
 
 /** Time allowed past the latency budget before the pipeline is stopped regardless of what it is waiting on. */
@@ -733,6 +741,7 @@ export async function handleAnalyzeRequest(
           : {};
       run = await forensicRunner({
         mode,
+        maxConcurrency: forensicSectionConcurrency(env.FORENSIC_SECTION_CONCURRENCY),
         // Experimental, off unless ANALYZER_FORENSIC_REASONING=adaptive is set on the deployment. Basic never uses it.
         reasoning: isForensic && env.ANALYZER_FORENSIC_REASONING === 'adaptive' ? 'adaptive' : 'off',
         documentText,
