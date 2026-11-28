@@ -31,7 +31,22 @@ export function jobFailureHttpStatus(code: string | null | undefined, retryable:
   return 422;
 }
 
-export const onRequestGet = async ({
+// Diagnostic timing (no job id, uid or document content): one line per status request with its HTTP status and
+// server-side duration. Used to tell slow status reads apart from browser-side gaps (see T-28).
+export const onRequestGet = async (ctx: Parameters<typeof handleJobStatus>[0]): Promise<Response> => {
+  const started = Date.now();
+  let res: Response;
+  try {
+    res = await handleJobStatus(ctx);
+  } catch (error) {
+    console.error('[JOB_STATUS_TIMING]', JSON.stringify({ status: 'throw', ms: Date.now() - started, errorClass: error instanceof Error ? error.name : 'unknown' }));
+    throw error;
+  }
+  console.info('[JOB_STATUS_TIMING]', JSON.stringify({ status: res.status, ms: Date.now() - started }));
+  return res;
+};
+
+const handleJobStatus = async ({
   request,
   env = {},
   params,
